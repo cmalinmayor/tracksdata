@@ -238,8 +238,15 @@ class RegionPropsNodes(BaseNodesOperator):
         node_op.add_nodes(graph, labels=labels, t=0, intensity_image=fluorescence_image)
         ```
         """
-        if DEFAULT_METADATA_KEYS.SHAPE not in graph.metadata:
+        existing_shape = graph.metadata.get(DEFAULT_METADATA_KEYS.SHAPE)
+        if existing_shape is None:
             graph.metadata.update(**{DEFAULT_METADATA_KEYS.SHAPE: labels.shape})
+        elif tuple(existing_shape) != tuple(labels.shape):
+            LOG.warning(
+                "Graph metadata `shape` is %s, which does not match `labels.shape` %s.",
+                tuple(existing_shape),
+                tuple(labels.shape),
+            )
 
         if self._spacing is not None:
             existing_scale = graph.metadata.get(DEFAULT_METADATA_KEYS.SCALE)
