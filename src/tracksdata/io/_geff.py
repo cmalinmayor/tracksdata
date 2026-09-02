@@ -37,11 +37,11 @@ from tracksdata.graph._base_graph import BaseGraph
 from tracksdata.utils._logging import LOG
 
 __all__ = [
+    "append_graph_metadata",
     "convert_geff_prop_dtype",
     "geff_prop_dtype",
     "read_graph_metadata",
     "remove_graph_metadata",
-    "write_graph_metadata",
 ]
 
 _EXTRA_KEY = "tracksdata"
@@ -82,9 +82,9 @@ def read_graph_metadata(source: StoreLike | GeffMetadata) -> dict[str, Any]:
     return {k: v for k, v in metadata.items() if not BaseGraph._is_private_metadata_key(k)}
 
 
-def write_graph_metadata(store: StoreLike, **kwargs: Any) -> None:
+def append_graph_metadata(store: StoreLike, **kwargs: Any) -> None:
     """
-    Write tracksdata graph metadata into an existing geff store, without loading the graph.
+    Append tracksdata graph metadata into an existing geff store, without loading the graph.
 
     Counterpart to :func:`read_graph_metadata`. Merges ``kwargs`` into the store's
     existing `extra["tracksdata"]` entry, so previously written keys are preserved
@@ -101,7 +101,7 @@ def write_graph_metadata(store: StoreLike, **kwargs: Any) -> None:
     Examples
     --------
     ```python
-    write_graph_metadata("tracks.geff", shape=(5, 100, 100))
+    append_graph_metadata("tracks.geff", shape=(5, 100, 100))
     read_graph_metadata("tracks.geff")["shape"]  # [5, 100, 100]
     ```
     """

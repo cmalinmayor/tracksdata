@@ -7,9 +7,9 @@ from zarr.storage import MemoryStore
 
 from tracksdata.graph import RustWorkXGraph
 from tracksdata.io import (
+    append_graph_metadata,
     read_graph_metadata,
     remove_graph_metadata,
-    write_graph_metadata,
 )
 
 SHAPE = (5, 100, 100)
@@ -94,59 +94,59 @@ def test_read_graph_metadata_excludes_private_keys() -> None:
     assert read_graph_metadata(store) == {"shape": list(SHAPE)}
 
 
-def test_write_graph_metadata_from_path(tmp_path: Path) -> None:
-    """`write_graph_metadata` adds a new key without a graph object."""
+def test_append_graph_metadata_from_path(tmp_path: Path) -> None:
+    """`append_graph_metadata` adds a new key without a graph object."""
     graph = _make_graph()
     geff_path = tmp_path / "tracks.geff"
     graph.to_geff(geff_store=geff_path)
 
-    write_graph_metadata(geff_path, scale=(0.5, 0.2, 0.2))
+    append_graph_metadata(geff_path, scale=(0.5, 0.2, 0.2))
 
     assert read_graph_metadata(geff_path) == {"shape": list(SHAPE), "scale": [0.5, 0.2, 0.2]}
 
 
-def test_write_graph_metadata_merges_with_existing_keys() -> None:
+def test_append_graph_metadata_merges_with_existing_keys() -> None:
     """Writing one key does not clobber other previously written keys."""
     graph = _make_graph()
     store = MemoryStore()
     graph.to_geff(geff_store=store)
 
-    write_graph_metadata(store, scale=(0.5, 0.2, 0.2))
+    append_graph_metadata(store, scale=(0.5, 0.2, 0.2))
 
     assert read_graph_metadata(store) == {"shape": list(SHAPE), "scale": [0.5, 0.2, 0.2]}
 
 
-def test_write_graph_metadata_overwrites_existing_key() -> None:
+def test_append_graph_metadata_overwrites_existing_key() -> None:
     """Writing an existing key overwrites its value."""
     graph = _make_graph()
     store = MemoryStore()
     graph.to_geff(geff_store=store)
 
-    write_graph_metadata(store, shape=(1, 2, 3))
+    append_graph_metadata(store, shape=(1, 2, 3))
 
     assert read_graph_metadata(store) == {"shape": [1, 2, 3]}
 
 
-def test_write_graph_metadata_on_store_without_tracksdata_extras() -> None:
+def test_append_graph_metadata_on_store_without_tracksdata_extras() -> None:
     """Writing works on a geff that was not written by tracksdata."""
     store = MemoryStore()
     _minimal_geff_metadata().write(store)
 
-    write_graph_metadata(store, shape=(1, 2, 3))
+    append_graph_metadata(store, shape=(1, 2, 3))
 
     assert read_graph_metadata(store) == {"shape": [1, 2, 3]}
     # the caller's own namespace is untouched
     assert GeffMetadata.read(store).extra["downstream"] == {"hello": "world"}
 
 
-def test_write_graph_metadata_rejects_private_keys() -> None:
+def test_append_graph_metadata_rejects_private_keys() -> None:
     """Private metadata keys cannot be set through the public writer."""
     graph = _make_graph()
     store = MemoryStore()
     graph.to_geff(geff_store=store)
 
     with pytest.raises(ValueError, match="reserved for internal use"):
-        write_graph_metadata(store, __private_secret=42)
+        append_graph_metadata(store, __private_secret=42)
 
 
 def test_remove_graph_metadata_from_path(tmp_path: Path) -> None:
