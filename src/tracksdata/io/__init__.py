@@ -5,6 +5,8 @@ from tracksdata.io._geff import (
     convert_geff_prop_dtype,
     geff_prop_dtype,
     read_graph_metadata,
+    remove_graph_metadata,
+    write_graph_metadata,
 )
 
 __all__ = [
@@ -13,5 +15,7 @@ __all__ = [
     "from_ctc",
     "geff_prop_dtype",
     "read_graph_metadata",
+    "remove_graph_metadata",
     "to_ctc",
+    "write_graph_metadata",
 ]

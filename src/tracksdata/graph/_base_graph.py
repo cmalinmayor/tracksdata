@@ -2055,21 +2055,23 @@ class BaseGraph(abc.ABC):
     def _is_private_metadata_key(cls, key: str) -> bool:
         return key.startswith(cls._PRIVATE_METADATA_PREFIX)
 
-    def _validate_metadata_key(self, key: str, *, is_public: bool) -> None:
+    @classmethod
+    def _validate_metadata_key(cls, key: str, *, is_public: bool) -> None:
         if not isinstance(key, str):
             raise TypeError(f"Metadata key must be a string. Got {type(key)}.")
-        is_private_key = self._is_private_metadata_key(key)
+        is_private_key = cls._is_private_metadata_key(key)
         if is_public and is_private_key:
             raise ValueError(f"Metadata key '{key}' is reserved for internal use.")
         if not is_public and not is_private_key:
             raise ValueError(
                 f"Metadata key '{key}' is not private. Private metadata keys must start with "
-                f"'{self._PRIVATE_METADATA_PREFIX}'."
+                f"'{cls._PRIVATE_METADATA_PREFIX}'."
             )
 
-    def _validate_metadata_keys(self, keys: Sequence[str], *, is_public: bool) -> None:
+    @classmethod
+    def _validate_metadata_keys(cls, keys: Sequence[str], *, is_public: bool) -> None:
         for key in keys:
-            self._validate_metadata_key(key, is_public=is_public)
+            cls._validate_metadata_key(key, is_public=is_public)
 
     def _set_metadata_with_validation(self, is_public: bool = True, **kwargs) -> None:
         self._validate_metadata_keys(kwargs.keys(), is_public=is_public)
