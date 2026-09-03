@@ -598,8 +598,7 @@ class RustWorkXGraph(BaseGraph):
         Returns a {node_id: attrs} snapshot iff `capture_attrs` is True (else `{}`),
         so callers that need to emit signals can do so without re-querying.
         """
-        rx_indices = set(self.rx_graph.node_indices())
-        missing = [nid for nid in node_ids if nid not in rx_indices]
+        missing = [nid for nid in node_ids if not self.rx_graph.has_node(nid)]
         if missing:
             raise ValueError(f"Node {missing[0]} does not exist in the graph.")
 
@@ -640,13 +639,15 @@ class RustWorkXGraph(BaseGraph):
         return edge_ids
 
     def _bulk_remove_edges_local(self, edge_ids: list[int]) -> None:
-        """Atomic-validate then drop edges by id via rx_graph.remove_edges_from."""
-        edge_map = self.rx_graph.edge_index_map()
-        missing = [eid for eid in edge_ids if eid not in edge_map]
-        if missing:
-            raise ValueError(f"Edge {missing[0]} does not exist in the graph.")
-        endpoints = [(edge_map[eid][0], edge_map[eid][1]) for eid in edge_ids]
-        self.rx_graph.remove_edges_from(endpoints)
+        """Atomic-validate then drop edges directly by their stable indices."""
+        for edge_id in edge_ids:
+            try:
+                self.rx_graph.get_edge_data_by_index(edge_id)
+            except IndexError as e:
+                raise ValueError(f"Edge {edge_id} does not exist in the graph.") from e
+
+        for edge_id in edge_ids:
+            self.rx_graph.remove_edge_from_index(edge_id)
 
     # ------------------------------------------------------------------
     # Public mutation API — validation + signals on top of the locals.
@@ -1409,10 +1410,11 @@ class RustWorkXGraph(BaseGraph):
             else:
                 broadcast_attrs[key] = value
 
-        edge_map = self._graph.edge_index_map()
+        # Resolve every payload before mutating so a missing id cannot leave a
+        # partially updated graph. Indexed access avoids materializing all edges.
+        edge_attrs = [self._graph.get_edge_data_by_index(edge_id) for edge_id in edge_ids]
 
-        for i, edge_id in enumerate(edge_ids):
-            edge_attr = edge_map[edge_id][2]  # 0=source, 1=target, 2=attributes
+        for i, edge_attr in enumerate(edge_attrs):
             for key, value in broadcast_attrs.items():
                 edge_attr[key] = value[i]
 
