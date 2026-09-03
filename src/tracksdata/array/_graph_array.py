@@ -3,6 +3,7 @@ from copy import copy
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import polars as pl
 
 from tracksdata.array._base_array import ArrayIndex, BaseReadOnlyArray
 from tracksdata.array._nd_chunk_cache import NDChunkCache
@@ -166,6 +167,7 @@ class GraphArrayView(BaseReadOnlyArray):
             else:
                 try:
                     attr_dtype = graph._node_attr_schemas()[self._attr_key].dtype
+                    attr_dtype = pl.datatypes.parse_into_dtype(attr_dtype)
                     dtype = polars_dtype_to_numpy_dtype(attr_dtype, allow_sequence=False)
                 except ValueError as e:
                     raise ValueError(f"Attribute values for key '{self._attr_key}' must be scalar.") from e

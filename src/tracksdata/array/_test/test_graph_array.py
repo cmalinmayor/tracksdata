@@ -256,7 +256,7 @@ def test_graph_array_dtype_inference_does_not_read_attribute_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-empty graph's declared schema is sufficient for dtype inference."""
-    graph_backend.add_node_attr_key("label", dtype=pl.Int64)
+    graph_backend.add_node_attr_key("label", dtype=int)  # type: ignore[arg-type]
     graph_backend.add_node({DEFAULT_ATTR_KEYS.T: 0, "label": 7})
 
     def unexpected_node_attrs(*_args, **_kwargs):
