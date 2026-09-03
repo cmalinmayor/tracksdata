@@ -36,6 +36,7 @@ from tracksdata.utils._dtypes import (
     deserialize_attr_schema,
     flatten_struct_dtype,
     flatten_struct_value,
+    normalize_struct_value,
     polars_dtype_to_sqlalchemy_type,
     process_attr_key_args,
     serialize_attr_schema,
@@ -81,6 +82,38 @@ def _data_numpy_to_native(data: dict[str, Any]) -> None:
         # (0-dim) arrays, which must be passed through untouched.
         if isinstance(v, np.generic):
             data[k] = v.item()
+
+
+def _normalize_updated_value(value: Any, schema: AttrSchema | None) -> Any:
+    """Return the logical value represented by a SQL update input."""
+    if schema is not None and isinstance(schema.dtype, pl.Struct) and isinstance(value, dict):
+        return normalize_struct_value(value, schema.dtype)
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _updated_attrs_by_id(
+    attrs: dict[str, Any],
+    node_ids: Sequence[int],
+    schemas: dict[str, AttrSchema],
+    old_attrs_by_id: dict[int, dict[str, Any]] | None = None,
+) -> dict[int, dict[str, Any]]:
+    """Broadcast applied update values by node without reading them back from SQL."""
+    scalar_keys = {
+        key
+        for key, value in attrs.items()
+        if np.isscalar(value)
+        or (key in schemas and isinstance(schemas[key].dtype, pl.Struct) and isinstance(value, dict))
+    }
+    updated_attrs_by_id: dict[int, dict[str, Any]] = {}
+    for position, node_id in enumerate(node_ids):
+        node_attrs = dict(old_attrs_by_id[node_id]) if old_attrs_by_id is not None else {}
+        for key, value in attrs.items():
+            applied_value = value if key in scalar_keys else value[position]
+            node_attrs[key] = _normalize_updated_value(applied_value, schemas.get(key))
+        updated_attrs_by_id[node_id] = node_attrs
+    return updated_attrs_by_id
 
 
 def _resolve_attr_filter_column(
@@ -2195,7 +2228,8 @@ class SQLGraph(BaseGraph):
         if len(updated_node_ids) == 0:
             return
 
-        attr_keys = self.node_attr_keys()
+        node_attr_schemas = self._node_attr_schemas()
+        attr_keys = [key for key in node_attr_schemas if key != DEFAULT_ATTR_KEYS.NODE_ID]
         # Views must be maintained even with no listeners, but only some of them
         # read the before/after snapshots -- see `_views_need_node_attrs`. Each
         # snapshot is a full query over the updated rows, so skipping one matters.
@@ -2217,16 +2251,15 @@ class SQLGraph(BaseGraph):
 
         changed_keys = set(attrs.keys())
         if needs_new:
-            # `needs_old` is exactly "somebody will emit", and an emitted payload has
-            # to carry every attribute. Nobody emitting means the snapshot is only
-            # feeding write-through into views, which reads the changed keys alone,
-            # so the query can skip the rest of the columns.
-            new_attr_keys = attr_keys if needs_old else [k for k in attr_keys if k in changed_keys]
-            new_df = self.filter(node_ids=updated_node_ids).node_attrs(
-                attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, *new_attr_keys]
-            )
-            new_attrs_by_id = new_df.rows_by_key(
-                key=DEFAULT_ATTR_KEYS.NODE_ID, named=True, unique=True, include_key=True
+            # The write succeeded, so its broadcast input is the new state. Derive
+            # the payload directly instead of querying the same rows again. When an
+            # event will be emitted, overlay the update on the complete old snapshot;
+            # otherwise SQL-backed views need only the changed keys for write-through.
+            new_attrs_by_id = _updated_attrs_by_id(
+                attrs,
+                updated_node_ids,
+                node_attr_schemas,
+                old_attrs_by_id,
             )
         if signal_on:
             emit_node_updated_events(
