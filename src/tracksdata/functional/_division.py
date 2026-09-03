@@ -59,10 +59,8 @@ def _avg_node_attrs(graph: BaseGraph, node_ids: list[int], non_numeric_idx: int 
 def _get_edge_custom_attrs(graph: BaseGraph, source_id: int, target_id: int) -> dict:
     """Get edge attributes excluding the system keys (edge_id, source_id, target_id)."""
     eid = graph.edge_id(source_id, target_id)
-    row = (
-        graph.edge_attrs()
-        .filter(pl.col(DEFAULT_ATTR_KEYS.EDGE_ID) == eid)
-        .drop([DEFAULT_ATTR_KEYS.EDGE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET])
+    row = graph.edge_attrs(edge_ids=[eid]).drop(
+        [DEFAULT_ATTR_KEYS.EDGE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET]
     )
     if len(row) == 0:
         return {}

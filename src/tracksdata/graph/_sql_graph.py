@@ -1605,6 +1605,7 @@ class SQLGraph(BaseGraph):
         self,
         *,
         attr_keys: Sequence[str] | None = None,
+        edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
         if isinstance(attr_keys, str):
@@ -1612,6 +1613,9 @@ class SQLGraph(BaseGraph):
 
         with Session(self._engine) as session:
             query = sa.select(self.Edge)
+
+            if edge_ids is not None:
+                query = query.where(self.Edge.edge_id.in_(list(edge_ids)))
 
             if attr_keys is not None:
                 attr_keys = set(attr_keys)

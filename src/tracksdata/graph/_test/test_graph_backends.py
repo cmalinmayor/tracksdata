@@ -172,6 +172,20 @@ def test_valid_attr_keys_are_not_rejected(graph_backend: BaseGraph) -> None:
     assert graph_backend.filter(EdgeAttr("w") == 1.0).edge_ids() == [ids["e"]]
 
 
+def test_edge_attrs_can_target_edge_ids(graph_backend: BaseGraph) -> None:
+    """Targeted edge reads return only the requested rows on every backend."""
+    graph_backend.add_edge_attr_key("w", pl.Float64)
+    nodes = [graph_backend.add_node({"t": t}) for t in range(3)]
+    first = graph_backend.add_edge(nodes[0], nodes[1], {"w": 1.0})
+    second = graph_backend.add_edge(nodes[1], nodes[2], {"w": 2.0})
+
+    result = graph_backend.edge_attrs(attr_keys=["w"], edge_ids=[second])
+
+    assert result[DEFAULT_ATTR_KEYS.EDGE_ID].to_list() == [second]
+    assert result["w"].to_list() == [2.0]
+    assert first not in result[DEFAULT_ATTR_KEYS.EDGE_ID]
+
+
 def test_add_node(graph_backend: BaseGraph) -> None:
     """Test adding nodes with various attributes."""
 

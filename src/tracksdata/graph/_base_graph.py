@@ -910,6 +910,7 @@ class BaseGraph(abc.ABC):
         self,
         *,
         attr_keys: Sequence[str] | None = None,
+        edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
         """
@@ -920,6 +921,8 @@ class BaseGraph(abc.ABC):
         attr_keys : Sequence[str] | None
             The attribute keys to get.
             If None, all attributesare used.
+        edge_ids : Sequence[int] | None
+            The edge IDs to get. If None, all edges are returned.
         unpack : bool
             Whether to unpack array attributesinto multiple scalar attributes.
         """
@@ -2523,9 +2526,7 @@ class EdgeInterface:
         Any
             The attribute value.
         """
-        df = self._graph.edge_attrs(attr_keys=[key])
-        filtered = df.filter(pl.col(DEFAULT_ATTR_KEYS.EDGE_ID) == self._edge_id)
-        return filtered[key].item()
+        return self._graph.edge_attrs(attr_keys=[key], edge_ids=[self._edge_id])[key].item()
 
     def __setitem__(self, key: str, value: Any) -> None:
         """
@@ -2541,9 +2542,7 @@ class EdgeInterface:
         return self._graph.update_edge_attrs(attrs={key: [value]}, edge_ids=[self._edge_id])
 
     def __str__(self) -> str:
-        df = self._graph.edge_attrs()
-        edge_attr = df.filter(pl.col(DEFAULT_ATTR_KEYS.EDGE_ID) == self._edge_id)
-        return str(edge_attr)
+        return str(self._graph.edge_attrs(edge_ids=[self._edge_id]))
 
     def __repr__(self) -> str:
         return str(self)
@@ -2557,7 +2556,5 @@ class EdgeInterface:
         dict[str, Any]
             Dictionary of attribute keys and values.
         """
-        df = self._graph.edge_attrs()
-        filtered = df.filter(pl.col(DEFAULT_ATTR_KEYS.EDGE_ID) == self._edge_id)
-        data = filtered.drop(DEFAULT_ATTR_KEYS.EDGE_ID).rows(named=True)[0]
+        data = self._graph.edge_attrs(edge_ids=[self._edge_id]).drop(DEFAULT_ATTR_KEYS.EDGE_ID).rows(named=True)[0]
         return data

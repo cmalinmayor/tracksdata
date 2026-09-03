@@ -806,7 +806,7 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
             root_local_tgt = root._map_to_local(target_id) if hasattr(root, "_map_to_local") else target_id
             attrs = root.rx_graph.get_edge_data(root_local_src, root_local_tgt)
         else:
-            df = root.edge_attrs()
+            df = root.edge_attrs(edge_ids=[parent_edge_id])
             drop_cols = [
                 c
                 for c in (
@@ -816,7 +816,7 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
                 )
                 if c in df.columns
             ]
-            attrs = df.filter(pl.col(DEFAULT_ATTR_KEYS.EDGE_ID) == parent_edge_id).drop(drop_cols).rows(named=True)[0]
+            attrs = df.drop(drop_cols).rows(named=True)[0]
             # A rustworkx-family root shares its payload, EDGE_ID included; other backends
             # hand back a plain dict, so stamp the root edge id explicitly (as `bulk_add_edges`
             # does). Otherwise the local edge keeps the -1 placeholder and disagrees with
@@ -964,17 +964,22 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
         self,
         *,
         attr_keys: Sequence[str] | str | None = None,
+        edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
-        node_ids = self._get_local_ids()
-        edges_df = (
-            super()
-            .filter(node_ids=node_ids)
-            .edge_attrs(
+        if edge_ids is None:
+            node_ids = self._get_local_ids()
+            edges_df = super().filter(node_ids=node_ids).edge_attrs(attr_keys=attr_keys, unpack=unpack)
+        else:
+            local_edge_ids = [
+                self._edge_map_from_root[edge_id] for edge_id in edge_ids if edge_id in self._edge_map_from_root
+            ]
+            edges_df = RustWorkXGraph.edge_attrs(
+                self,
                 attr_keys=attr_keys,
+                edge_ids=local_edge_ids,
                 unpack=unpack,
             )
-        )
         edges_df = self._map_df_to_external(
             edges_df, [DEFAULT_ATTR_KEYS.NODE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET]
         )

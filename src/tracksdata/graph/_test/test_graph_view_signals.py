@@ -596,6 +596,17 @@ def test_root_edge_update_per_edge_values_reach_view(graph_backend: BaseGraph) -
     assert _edge_value_of(view, other_id) == 22.0
 
 
+def test_view_edge_attrs_can_target_root_edge_ids(graph_backend: BaseGraph) -> None:
+    """Targeted reads through a view accept the externally visible root ids."""
+    edge_id, other_id = _graph_with_edge(graph_backend)
+    view = graph_backend.filter().subgraph()
+
+    result = view.edge_attrs(attr_keys=["w"], edge_ids=[other_id])
+
+    assert result[DEFAULT_ATTR_KEYS.EDGE_ID].to_list() == [other_id]
+    assert edge_id not in result[DEFAULT_ATTR_KEYS.EDGE_ID]
+
+
 def test_view_edge_write_is_applied_once(graph_backend: BaseGraph) -> None:
     """Writing an edge through the view must reach both graphs exactly once."""
     edge_id, _ = _graph_with_edge(graph_backend)

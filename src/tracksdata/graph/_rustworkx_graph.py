@@ -1241,6 +1241,7 @@ class RustWorkXGraph(BaseGraph):
         self,
         *,
         attr_keys: Sequence[str] | str | None = None,
+        edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
         """
@@ -1251,6 +1252,8 @@ class RustWorkXGraph(BaseGraph):
         attr_keys : Sequence[str] | str | None
             The attribute keys to get.
             If None, all attributesare used.
+        edge_ids : Sequence[int] | None
+            The edge IDs to get. If None, all edges are returned.
         unpack : bool
             Whether to unpack array attributesinto multiple scalar attributes.
         """
@@ -1264,15 +1267,22 @@ class RustWorkXGraph(BaseGraph):
 
         rx_graph = self.rx_graph
 
-        edge_map = rx_graph.edge_index_map()
-        if len(edge_map) == 0:
+        if edge_ids is None:
+            edge_records = list(rx_graph.edge_index_map().values())
+        else:
+            edge_records = [
+                (*rx_graph.get_edge_endpoints_by_index(edge_id), rx_graph.get_edge_data_by_index(edge_id))
+                for edge_id in edge_ids
+            ]
+
+        if len(edge_records) == 0:
             empty_columns = {}
             for key in [*attr_keys, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET]:
                 schema = self._edge_attr_schemas()[key]
                 empty_columns[key] = pl.Series(name=key, values=[], dtype=schema.dtype)
             return pl.DataFrame(empty_columns)
 
-        source, target, data = zip(*edge_map.values(), strict=False)
+        source, target, data = zip(*edge_records, strict=False)
 
         columns = {key: [row.get(key) for row in data] for key in attr_keys}
 
@@ -1860,6 +1870,7 @@ class IndexedRXGraph(MappedGraphMixin, RustWorkXGraph):
         self,
         *,
         attr_keys: Sequence[str] | str | None = None,
+        edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
         """
@@ -1869,6 +1880,8 @@ class IndexedRXGraph(MappedGraphMixin, RustWorkXGraph):
         ----------
         attr_keys : Sequence[str] | str | None
             The attributes to include in the subgraph.
+        edge_ids : Sequence[int] | None
+            The local edge IDs to include. If None, all edges are returned.
         unpack : bool
             Whether to unpack the attributes.
 
@@ -1877,8 +1890,11 @@ class IndexedRXGraph(MappedGraphMixin, RustWorkXGraph):
         pl.DataFrame
             The edge attributes of the graph.
         """
-        node_ids = self._get_local_ids()
-        df = super().filter(node_ids=node_ids).edge_attrs(attr_keys=attr_keys, unpack=unpack)
+        if edge_ids is None:
+            node_ids = self._get_local_ids()
+            df = super().filter(node_ids=node_ids).edge_attrs(attr_keys=attr_keys, unpack=unpack)
+        else:
+            df = super().edge_attrs(attr_keys=attr_keys, edge_ids=edge_ids, unpack=unpack)
         df = self._map_df_to_external(df, [DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET])
         return df
 
