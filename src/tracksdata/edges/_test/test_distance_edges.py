@@ -1,9 +1,10 @@
 import polars as pl
 import pytest
+import sqlalchemy as sa
 
 from tracksdata.constants import DEFAULT_ATTR_KEYS
 from tracksdata.edges import DistanceEdges
-from tracksdata.graph import RustWorkXGraph
+from tracksdata.graph import RustWorkXGraph, SQLGraph
 from tracksdata.options import get_options, options_context
 
 
@@ -32,6 +33,35 @@ def test_distance_edges_init_custom_params() -> None:
     assert operator.n_neighbors == 2
     assert operator.attr_keys == ["x", "y"]
     assert operator.delta_t == 2
+
+
+def test_distance_edges_reads_each_sql_frame_once() -> None:
+    """Coordinates and node ids come from the same SQL result."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("x", pl.Float64)
+    graph.add_node_attr_key("y", pl.Float64)
+    graph.bulk_add_nodes(
+        [
+            {"t": 0, "x": 0.0, "y": 0.0},
+            {"t": 1, "x": 1.0, "y": 1.0},
+        ]
+    )
+    operator = DistanceEdges(distance_threshold=10.0, n_neighbors=1)
+    graph.node_attr_keys()
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(statement)
+
+    sa.event.listen(graph._engine, "before_cursor_execute", record_statement)
+    try:
+        edges = operator._add_edges_per_time(1, graph=graph)
+    finally:
+        sa.event.remove(graph._engine, "before_cursor_execute", record_statement)
+
+    assert len(edges) == 1
+    node_reads = [statement for statement in statements if 'FROM "Node"' in statement]
+    assert len(node_reads) == 2
 
 
 def test_distance_edges_add_edges_empty_graph() -> None:

@@ -165,13 +165,17 @@ class GenericFuncNodeAttrs(BaseNodeAttrsOperator):
         """
         # Get node IDs for the specified time point
         graph_filter = graph.filter(NodeAttr(DEFAULT_ATTR_KEYS.T) == t)
+        requested_attr_keys = list(dict.fromkeys(self.attr_keys))
+        node_data = graph_filter.node_attrs(
+            attr_keys=list(dict.fromkeys([DEFAULT_ATTR_KEYS.NODE_ID, *requested_attr_keys]))
+        )
 
-        if graph_filter.is_empty():
+        if node_data.is_empty():
             LOG.warning(f"No nodes at time point {t}")
             return []
 
-        # Get attributes for these nodes
-        node_attrs = graph_filter.node_attrs(attr_keys=self.attr_keys)
+        node_ids = node_data[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
+        node_attrs = node_data.select(requested_attr_keys) if requested_attr_keys else None
 
         args = []
         if frames is not None:
@@ -179,15 +183,16 @@ class GenericFuncNodeAttrs(BaseNodeAttrsOperator):
 
         results = []
         if self.batch_size > 0:
-            size = len(node_attrs)
+            size = len(node_ids)
             for i in range(0, size, self.batch_size):
-                batch_node_attrs = node_attrs.slice(i, self.batch_size)
-                batch_results = self.func(*args, **batch_node_attrs.to_dict())
+                batch_attrs = {} if node_attrs is None else node_attrs.slice(i, self.batch_size).to_dict()
+                batch_results = self.func(*args, **batch_attrs)
                 results.extend(batch_results)
 
         else:
-            for data_dict in node_attrs.rows(named=True):
+            attr_rows = ({} for _ in node_ids) if node_attrs is None else node_attrs.rows(named=True)
+            for data_dict in attr_rows:
                 result = self.func(*args, **data_dict)
                 results.append(result)
 
-        return graph_filter.node_ids(), {self.output_key: results}
+        return node_ids, {self.output_key: results}

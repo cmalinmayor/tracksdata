@@ -1,10 +1,11 @@
 import numpy as np
 import polars as pl
 import pytest
+import sqlalchemy as sa
 from numpy.typing import NDArray
 
 from tracksdata.constants import DEFAULT_ATTR_KEYS
-from tracksdata.graph import RustWorkXGraph
+from tracksdata.graph import RustWorkXGraph, SQLGraph
 from tracksdata.nodes import GenericFuncNodeAttrs, Mask
 from tracksdata.options import get_options, options_context
 
@@ -40,6 +41,44 @@ def test_crop_func_attrs_init_with_attr_keys() -> None:
     assert operator.func == dummy_func
     assert operator.output_key == "test_output"
     assert operator.attr_keys == ["multiplier"]
+
+
+def test_generic_node_attrs_reads_sql_nodes_once() -> None:
+    """Input attributes and update ids come from the same SQL result."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("value", pl.Float64)
+    graph.add_node_attr_key("doubled", pl.Float64)
+    node_ids = graph.bulk_add_nodes([{"t": 0, "value": 1.0}, {"t": 0, "value": 2.0}])
+    operator = GenericFuncNodeAttrs(lambda value: value * 2, "doubled", attr_keys=["value"])
+    graph.node_attr_keys()
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(statement)
+
+    sa.event.listen(graph._engine, "before_cursor_execute", record_statement)
+    try:
+        result_ids, attrs = operator._node_attrs_per_time(0, graph=graph)
+    finally:
+        sa.event.remove(graph._engine, "before_cursor_execute", record_statement)
+
+    assert result_ids == node_ids
+    assert attrs == {"doubled": [2.0, 4.0]}
+    node_reads = [statement for statement in statements if 'FROM "Node"' in statement]
+    assert len(node_reads) == 1
+
+
+def test_generic_node_attrs_without_input_attributes_runs_once_per_node() -> None:
+    """The internal id column is not passed to functions that request no attrs."""
+    graph = RustWorkXGraph()
+    graph.add_node_attr_key("result", pl.Float64)
+    node_ids = graph.bulk_add_nodes([{"t": 0}, {"t": 0}])
+    operator = GenericFuncNodeAttrs(lambda: 3.0, "result")
+
+    result_ids, attrs = operator._node_attrs_per_time(0, graph=graph)
+
+    assert result_ids == node_ids
+    assert attrs == {"result": [3.0, 3.0]}
 
 
 def test_crop_func_attrs_init_with_sequence_output_key() -> None:

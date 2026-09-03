@@ -176,12 +176,13 @@ class DistanceEdges(BaseEdgesOperator):
             - List of node IDs at this time point
         """
         node_filter = graph.filter(NodeAttr(DEFAULT_ATTR_KEYS.T) == time_point)
+        node_data = node_filter.node_attrs(attr_keys=list(dict.fromkeys([DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys])))
 
-        if node_filter.is_empty():
+        if node_data.is_empty():
             return None, None, []
 
-        node_attrs = node_filter.node_attrs(attr_keys=attr_keys)
-        node_ids = list(node_filter.node_ids())
+        node_attrs = node_data.select(attr_keys)
+        node_ids = node_data[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
         kdtree = KDTree(node_attrs.to_numpy())
 
         return kdtree, node_attrs, node_ids
@@ -275,14 +276,15 @@ class DistanceEdges(BaseEdgesOperator):
 
         # Get current time point nodes
         current_filter = graph.filter(NodeAttr(DEFAULT_ATTR_KEYS.T) == t)
+        current_data = current_filter.node_attrs(attr_keys=list(dict.fromkeys([DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys])))
 
-        if current_filter.is_empty():
+        if current_data.is_empty():
             LOG.warning("No nodes found for time point %d", t)
             return []
 
-        cur_attrs = current_filter.node_attrs(attr_keys=attr_keys)
+        cur_attrs = current_data.select(attr_keys)
         cur_coords = cur_attrs.to_numpy()
-        cur_node_ids = list(current_filter.node_ids())
+        cur_node_ids = current_data[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
 
         edges_data = []
 
@@ -314,7 +316,8 @@ class DistanceEdges(BaseEdgesOperator):
                     NodeAttr(DEFAULT_ATTR_KEYS.T) < t,
                 )
 
-            if prev_filter.is_empty():
+            prev_data = prev_filter.node_attrs(attr_keys=list(dict.fromkeys([DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys])))
+            if prev_data.is_empty():
                 LOG.warning(
                     "No nodes found for time point in range (%d <= t < %d)",
                     t - self.delta_t,
@@ -322,8 +325,8 @@ class DistanceEdges(BaseEdgesOperator):
                 )
                 return []
 
-            prev_attrs = prev_filter.node_attrs(attr_keys=attr_keys)
-            prev_node_ids = np.asarray(list(prev_filter.node_ids()))
+            prev_attrs = prev_data.select(attr_keys)
+            prev_node_ids = prev_data[DEFAULT_ATTR_KEYS.NODE_ID].to_numpy()
             prev_kdtree = KDTree(prev_attrs.to_numpy())
 
             edges_data = self._query_neighbors_single_kdtree(
