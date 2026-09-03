@@ -361,8 +361,8 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
 
         rx_graph = self.rx_graph
         if mode == "node":
-            for node_id in rx_graph.node_indices():
-                rx_graph[node_id][schema.key] = schema.default_value
+            for node_attr in rx_graph.nodes():
+                node_attr[schema.key] = schema.default_value
         else:
             for _, _, edge_attr in rx_graph.weighted_edge_list():
                 edge_attr[schema.key] = schema.default_value
@@ -402,8 +402,8 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
 
         rx_graph = self.rx_graph
         if mode == "node":
-            for node_id in rx_graph.node_indices():
-                rx_graph[node_id].pop(key, None)
+            for node_attr in rx_graph.nodes():
+                node_attr.pop(key, None)
         else:
             for _, _, edge_attr in rx_graph.weighted_edge_list():
                 edge_attr.pop(key, None)
