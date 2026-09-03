@@ -152,6 +152,7 @@ def test_valid_attr_keys_are_not_rejected(graph_backend: BaseGraph) -> None:
     assert graph_backend.node_attrs(attr_keys=["area"])["area"].to_list() == [1.0, 2.0]
     assert graph_backend.node_attrs(attr_keys="area")["area"].to_list() == [1.0, 2.0]
     assert graph_backend.edge_attrs(attr_keys=["w"])["w"].to_list() == [1.0]
+    assert graph_backend.edge_attrs(attr_keys="w")["w"].to_list() == [1.0]
 
     # id columns are not user-declared attributes but are legitimately requestable
     node_df = graph_backend.node_attrs(attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, "area"])
@@ -180,7 +181,7 @@ def test_edge_attrs_can_target_edge_ids(graph_backend: BaseGraph) -> None:
     first = graph_backend.add_edge(nodes[0], nodes[1], {"w": 1.0})
     second = graph_backend.add_edge(nodes[1], nodes[2], {"w": 2.0})
 
-    result = graph_backend.edge_attrs(attr_keys=["w"], edge_ids=[second])
+    result = graph_backend.edge_attrs(attr_keys=["w"], edge_ids=[second, 999, second])
 
     assert result[DEFAULT_ATTR_KEYS.EDGE_ID].to_list() == [second]
     assert result["w"].to_list() == [2.0]
@@ -2735,6 +2736,10 @@ def test_sqlgraph_time_index_is_restored_on_reload(tmp_path: Path) -> None:
     time_indexes = [index for index in indexes if index["column_names"] == [DEFAULT_ATTR_KEYS.T]]
     assert len(time_indexes) == 1
 
+    assert reloaded.create_node_attr_index(DEFAULT_ATTR_KEYS.T) == "ix_node_t"
+    indexes = sa.inspect(reloaded._engine).get_indexes(reloaded.Node.__tablename__)
+    assert len([index for index in indexes if index["column_names"] == [DEFAULT_ATTR_KEYS.T]]) == 1
+
 
 @pytest.mark.parametrize(
     ("edges", "seeds"),
@@ -2792,6 +2797,14 @@ def test_sql_tracklet_nodes_executes_one_traversal_query() -> None:
 
     assert result == node_ids
     assert len(statements) == 1
+
+
+def test_sql_tracklet_nodes_retains_missing_seeds() -> None:
+    """The SQL specialization preserves the generic traversal's seed semantics."""
+    graph = SQLGraph("sqlite", ":memory:")
+    node_id = graph.add_node({"t": 0})
+
+    assert graph.tracklet_nodes([node_id, 999]) == [node_id, 999]
 
 
 def test_sqlgraph_edge_attr_index_create_and_drop(graph_backend: BaseGraph) -> None:

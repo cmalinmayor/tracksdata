@@ -1260,6 +1260,8 @@ class RustWorkXGraph(BaseGraph):
         """
         if attr_keys is None:
             attr_keys = self.edge_attr_keys()
+        elif isinstance(attr_keys, str):
+            attr_keys = [attr_keys]
 
         self._validate_attr_keys(attr_keys, "edge")
 
@@ -1271,10 +1273,14 @@ class RustWorkXGraph(BaseGraph):
         if edge_ids is None:
             edge_records = list(rx_graph.edge_index_map().values())
         else:
-            edge_records = [
-                (*rx_graph.get_edge_endpoints_by_index(edge_id), rx_graph.get_edge_data_by_index(edge_id))
-                for edge_id in edge_ids
-            ]
+            edge_records = []
+            for edge_id in dict.fromkeys(edge_ids):
+                try:
+                    edge_records.append(
+                        (*rx_graph.get_edge_endpoints_by_index(edge_id), rx_graph.get_edge_data_by_index(edge_id))
+                    )
+                except IndexError:
+                    continue
 
         if len(edge_records) == 0:
             empty_columns = {}

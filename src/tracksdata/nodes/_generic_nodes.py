@@ -165,7 +165,10 @@ class GenericFuncNodeAttrs(BaseNodeAttrsOperator):
         """
         # Get node IDs for the specified time point
         graph_filter = graph.filter(NodeAttr(DEFAULT_ATTR_KEYS.T) == t)
-        requested_attr_keys = list(dict.fromkeys(self.attr_keys))
+        if isinstance(self.attr_keys, str):
+            requested_attr_keys = [self.attr_keys]
+        else:
+            requested_attr_keys = list(dict.fromkeys(self.attr_keys))
         node_data = graph_filter.node_attrs(
             attr_keys=list(dict.fromkeys([DEFAULT_ATTR_KEYS.NODE_ID, *requested_attr_keys]))
         )

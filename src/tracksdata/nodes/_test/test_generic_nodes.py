@@ -81,6 +81,20 @@ def test_generic_node_attrs_without_input_attributes_runs_once_per_node() -> Non
     assert attrs == {"result": [3.0, 3.0]}
 
 
+def test_generic_node_attrs_accepts_single_string_attr_key() -> None:
+    """A string attribute key is one column, not a sequence of characters."""
+    graph = RustWorkXGraph()
+    graph.add_node_attr_key("value", pl.Float64)
+    node_id = graph.add_node({"t": 0, "value": 2.0})
+    graph.add_node_attr_key("result", pl.Float64)
+    operator = GenericFuncNodeAttrs(lambda value: value * 2, "result", attr_keys="value")
+
+    result_ids, attrs = operator._node_attrs_per_time(0, graph=graph)
+
+    assert result_ids == [node_id]
+    assert attrs == {"result": [4.0]}
+
+
 def test_crop_func_attrs_init_with_sequence_output_key() -> None:
     """Test CropFuncAttrs initialization with sequence output_key."""
 

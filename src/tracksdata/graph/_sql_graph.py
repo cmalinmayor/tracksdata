@@ -757,7 +757,7 @@ class SQLGraph(BaseGraph):
             # Use node_id as sole primary key for simpler updates
             node_id = sa.Column(sa.BigInteger, primary_key=True, unique=True)
 
-            t = sa.Column(sa.Integer, index=True, nullable=False)
+            t = sa.Column(sa.Integer, nullable=False)
 
         node_tb_name = Node.__tablename__
 
@@ -2373,9 +2373,10 @@ class SQLGraph(BaseGraph):
 
         try:
             with Session(self._engine) as session:
-                return [int(node_id) for node_id in session.execute(statement).scalars()]
+                tracklet_ids = {int(node_id) for node_id in session.execute(statement).scalars()}
         finally:
             seed_ids.close()
+        return sorted(tracklet_ids | {int(seed) for seed in seeds})
 
     def assign_tracklet_ids(
         self,
