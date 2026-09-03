@@ -1892,11 +1892,7 @@ class IndexedRXGraph(MappedGraphMixin, RustWorkXGraph):
         pl.DataFrame
             The edge attributes of the graph.
         """
-        if edge_ids is None:
-            node_ids = self._get_local_ids()
-            df = super().filter(node_ids=node_ids).edge_attrs(attr_keys=attr_keys, unpack=unpack)
-        else:
-            df = super().edge_attrs(attr_keys=attr_keys, edge_ids=edge_ids, unpack=unpack)
+        df = super().edge_attrs(attr_keys=attr_keys, edge_ids=edge_ids, unpack=unpack)
         df = self._map_df_to_external(df, [DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET])
         return df
 

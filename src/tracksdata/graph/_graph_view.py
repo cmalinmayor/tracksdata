@@ -967,19 +967,18 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
         edge_ids: Sequence[int] | None = None,
         unpack: bool = False,
     ) -> pl.DataFrame:
-        if edge_ids is None:
-            node_ids = self._get_local_ids()
-            edges_df = super().filter(node_ids=node_ids).edge_attrs(attr_keys=attr_keys, unpack=unpack)
-        else:
+        if edge_ids is not None:
             local_edge_ids = [
                 self._edge_map_from_root[edge_id] for edge_id in edge_ids if edge_id in self._edge_map_from_root
             ]
-            edges_df = RustWorkXGraph.edge_attrs(
-                self,
-                attr_keys=attr_keys,
-                edge_ids=local_edge_ids,
-                unpack=unpack,
-            )
+        else:
+            local_edge_ids = None
+        edges_df = RustWorkXGraph.edge_attrs(
+            self,
+            attr_keys=attr_keys,
+            edge_ids=local_edge_ids,
+            unpack=unpack,
+        )
         edges_df = self._map_df_to_external(
             edges_df, [DEFAULT_ATTR_KEYS.NODE_ID, DEFAULT_ATTR_KEYS.EDGE_SOURCE, DEFAULT_ATTR_KEYS.EDGE_TARGET]
         )

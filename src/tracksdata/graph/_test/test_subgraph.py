@@ -17,6 +17,27 @@ from tracksdata.graph._mapped_graph_mixin import MappedGraphMixin
 from tracksdata.utils._logging import LOG
 
 
+@pytest.mark.parametrize(
+    ("id_map", "local_ids", "expected"),
+    [
+        ({0: 100, 2: 200}, [2, 0], [200, 100]),
+        ({0: 100, 10_000: 200}, [10_000, 0], [200, 100]),
+    ],
+    ids=["dense", "sparse"],
+)
+def test_mapped_graph_vectorized_dataframe_mapping(
+    id_map: dict[int, int], local_ids: list[int], expected: list[int]
+) -> None:
+    """Dense gather and sparse fallback preserve mapped DataFrame values."""
+    mapped = MappedGraphMixin(id_map)
+    df = pl.DataFrame({"source_id": local_ids, "unchanged": [1, 2]})
+
+    result = mapped._map_df_to_external(df, ["source_id"])
+
+    assert result["source_id"].to_list() == expected
+    assert result["unchanged"].to_list() == [1, 2]
+
+
 def parametrize_subgraph_tests(func: Callable[..., None]) -> Callable[..., None]:
     """Decorator to parametrize tests for both original graphs and subgraphs."""
     return pytest.mark.parametrize("use_subgraph", [False, True], ids=["original", "subgraph"])(func)

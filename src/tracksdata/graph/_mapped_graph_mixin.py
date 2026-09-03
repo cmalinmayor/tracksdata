@@ -142,12 +142,33 @@ class MappedGraphMixin:
         pl.DataFrame
             DataFrame with transformed node IDs
         """
-        for col in columns:
-            if col in df.columns:
-                df = df.with_columns(
-                    pl.col(col).map_elements(self._local_to_external.__getitem__, return_dtype=pl.Int64).alias(col)
-                )
-        return df
+        columns = [col for col in columns if col in df.columns]
+        if not columns or df.is_empty():
+            return df
+
+        local_ids = np.fromiter(self._local_to_external.keys(), dtype=np.int64, count=len(self._local_to_external))
+        dense_size = int(local_ids.max()) + 1
+
+        # rustworkx indices are normally dense (possibly with a few holes), so
+        # native gather is substantially faster than one Python callback per
+        # DataFrame cell. Avoid a large allocation for an unusually sparse map.
+        if dense_size <= max(1024, 4 * len(local_ids)):
+            external_ids = np.fromiter(
+                self._local_to_external.values(),
+                dtype=np.int64,
+                count=len(self._local_to_external),
+            )
+            dense_map = np.empty(dense_size, dtype=np.int64)
+            dense_map[local_ids] = external_ids
+            lookup = pl.Series(dense_map)
+            return df.with_columns([lookup.gather(df[col]).alias(col) for col in columns])
+
+        return df.with_columns(
+            [
+                pl.col(col).map_elements(self._local_to_external.__getitem__, return_dtype=pl.Int64).alias(col)
+                for col in columns
+            ]
+        )
 
     def _vectorized_map_to_external(self, local_ids: np.ndarray | Sequence[int]) -> np.ndarray:
         """
