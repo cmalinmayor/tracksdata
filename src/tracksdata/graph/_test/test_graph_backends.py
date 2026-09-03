@@ -2706,7 +2706,7 @@ def test_sqlgraph_node_attr_index_create_and_drop(graph_backend: BaseGraph) -> N
 
     inspector = sa.inspect(graph_backend._engine)
     indexes = inspector.get_indexes(graph_backend.Node.__tablename__)
-    assert len(indexes) == 1
+    assert any(idx["column_names"] == ["t"] for idx in indexes)
     assert any(idx["name"] == index_name and idx["column_names"] == ["t", "label"] for idx in indexes)
 
     dropped_name = graph_backend.drop_node_attr_index(["t", "label"])
@@ -2714,6 +2714,25 @@ def test_sqlgraph_node_attr_index_create_and_drop(graph_backend: BaseGraph) -> N
 
     indexes_after = sa.inspect(graph_backend._engine).get_indexes(graph_backend.Node.__tablename__)
     assert all(idx["name"] != index_name for idx in indexes_after)
+
+
+def test_sqlgraph_time_index_is_restored_on_reload(tmp_path: Path) -> None:
+    """Opening a legacy database adds the built-in time index once."""
+    db_path = tmp_path / "time_index.db"
+    graph = SQLGraph("sqlite", str(db_path))
+    time_index = next(
+        index
+        for index in sa.inspect(graph._engine).get_indexes(graph.Node.__tablename__)
+        if index["column_names"] == [DEFAULT_ATTR_KEYS.T]
+    )
+    sa.Index(time_index["name"], graph.Node.t).drop(bind=graph._engine)
+    graph._engine.dispose()
+
+    reloaded = SQLGraph("sqlite", str(db_path))
+    indexes = sa.inspect(reloaded._engine).get_indexes(reloaded.Node.__tablename__)
+
+    time_indexes = [index for index in indexes if index["column_names"] == [DEFAULT_ATTR_KEYS.T]]
+    assert len(time_indexes) == 1
 
 
 def test_sqlgraph_edge_attr_index_create_and_drop(graph_backend: BaseGraph) -> None:

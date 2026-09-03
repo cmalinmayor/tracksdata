@@ -705,6 +705,7 @@ class SQLGraph(BaseGraph):
             self.Base.metadata.drop_all(self._engine)
 
         self.Base.metadata.create_all(self._engine)
+        self._ensure_time_index()
 
         self._max_id_per_time = {}
         self._update_max_id_per_time()
@@ -713,6 +714,13 @@ class SQLGraph(BaseGraph):
 
     def supports_custom_indices(self) -> bool:
         return True
+
+    def _ensure_time_index(self) -> None:
+        """Create the built-in time index, including for pre-existing databases."""
+        indexes = sa.inspect(self._engine).get_indexes(self.Node.__tablename__)
+        if any(index["column_names"] == [DEFAULT_ATTR_KEYS.T] for index in indexes):
+            return
+        sa.Index("ix_node_t", self.Node.t).create(bind=self._engine, checkfirst=True)
 
     def _define_schema(self, overwrite: bool) -> None:
         """
@@ -749,9 +757,7 @@ class SQLGraph(BaseGraph):
             # Use node_id as sole primary key for simpler updates
             node_id = sa.Column(sa.BigInteger, primary_key=True, unique=True)
 
-            # Add t as a regular column
-            # NOTE might want to use as index for fast time-based queries
-            t = sa.Column(sa.Integer, nullable=False)
+            t = sa.Column(sa.Integer, index=True, nullable=False)
 
         node_tb_name = Node.__tablename__
 
