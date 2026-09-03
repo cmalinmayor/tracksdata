@@ -14,13 +14,16 @@ there is no ``edge_updated`` signal.
 
 import gc
 import pickle
+from collections.abc import Callable
+from typing import Any
 
+import numpy as np
 import polars as pl
 import pytest
 
 from tracksdata.attrs import NodeAttr
 from tracksdata.constants import DEFAULT_ATTR_KEYS
-from tracksdata.graph import BaseGraph, RustWorkXGraph
+from tracksdata.graph import BaseGraph, RustWorkXGraph, SQLGraph
 from tracksdata.graph._rustworkx_graph import IndexedRXGraph
 
 
@@ -134,6 +137,96 @@ def _record_updates(graph: BaseGraph) -> _UpdateRecorder:
 def _value_of(graph: BaseGraph, node_id: int, key: str = "x") -> float:
     df = graph.node_attrs(attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, key])
     return df.filter(pl.col(DEFAULT_ATTR_KEYS.NODE_ID) == node_id)[key].item()
+
+
+def _count_sql_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    graph: SQLGraph,
+) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
+    """Record database materializations made after a SQL graph is set up."""
+    reads: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    original: Callable[..., pl.DataFrame] = graph._read_database
+
+    def recording_read(*args: Any, **kwargs: Any) -> pl.DataFrame:
+        # Calls without a connection recurse once with a session connection;
+        # count only that inner call, where the query is actually materialized.
+        if len(args) >= 3 or kwargs.get("connection") is not None:
+            reads.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(graph, "_read_database", recording_read)
+    return reads
+
+
+@pytest.mark.parametrize("update_through_view", [False, True])
+def test_sql_update_avoids_post_update_readback(
+    monkeypatch: pytest.MonkeyPatch,
+    update_through_view: bool,
+) -> None:
+    """A listener-free SQL update derives view values from the applied input."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("x", pl.Float64)
+    node_id = graph.add_node({"t": 0, "x": 0.0})
+    view = graph.filter().subgraph()
+    reads = _count_sql_reads(monkeypatch, graph)
+
+    target = view if update_through_view else graph
+    target.update_node_attrs(attrs={"x": 5.0}, node_ids=[node_id])
+
+    assert reads == []
+    assert _value_of(view, node_id) == 5.0
+
+
+def test_sql_update_listener_uses_only_pre_update_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A listener still needs old state, but new state needs no second query."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("x", pl.Float64)
+    graph.add_node_attr_key("label", pl.String)
+    node_id = graph.add_node({"t": 0, "x": 0.0, "label": "unchanged"})
+    view = graph.filter().subgraph()
+    view_calls = _record_updates(view)
+    reads = _count_sql_reads(monkeypatch, graph)
+
+    graph.update_node_attrs(attrs={"x": [np.float32(3.5)]}, node_ids=[node_id])
+
+    assert len(reads) == 1
+    assert len(view_calls) == 1
+    _node_ids, old, new, _changed_keys = view_calls.calls[0]
+    assert old[0]["x"] == 0.0
+    assert new[0]["x"] == 3.5
+    assert isinstance(new[0]["x"], float)
+    assert new[0]["label"] == "unchanged"
+
+
+def test_sql_update_derives_nested_struct_payload() -> None:
+    """Derived values retain the logical struct shape written to SQL."""
+    graph = SQLGraph("sqlite", ":memory:")
+    dtype = pl.Struct(
+        {
+            "count": pl.Int64,
+            "details": pl.Struct({"score": pl.Float64, "label": pl.String}),
+        }
+    )
+    graph.add_node_attr_key("measurement", dtype)
+    node_id = graph.add_node({"t": 0, "measurement": {"count": 1, "details": {"score": 1.0, "label": "old"}}})
+    view = graph.filter().subgraph()
+    view_calls = _record_updates(view)
+
+    graph.update_node_attrs(
+        attrs={
+            "measurement": {
+                "count": np.int32(2),
+                "details": {"score": np.float32(2.5), "label": "new"},
+            }
+        },
+        node_ids=[node_id],
+    )
+
+    expected = {"count": 2, "details": {"score": 2.5, "label": "new"}}
+    assert view_calls.calls[0][2][0]["measurement"] == expected
+    assert view.node_attrs(attr_keys=["measurement"])["measurement"].item() == expected
 
 
 def test_root_update_is_visible_in_view(graph_backend: BaseGraph) -> None:

@@ -1349,7 +1349,7 @@ class RustWorkXGraph(BaseGraph):
 
         changed_keys = set(attrs.keys())
         if needs_new:
-            new_attrs_by_id = {node_id: dict(self._graph[node_id]) for node_id in node_ids}
+            new_attrs_by_id = {node_id: self._graph[node_id] for node_id in node_ids}
         if signal_on:
             emit_node_updated_events(
                 self.node_updated,
@@ -2057,7 +2057,7 @@ class IndexedRXGraph(MappedGraphMixin, RustWorkXGraph):
         changed_keys = set(attrs.keys())
         if needs_new:
             new_attrs_by_id = {
-                external_node_id: dict(self._graph[local_node_id])
+                external_node_id: self._graph[local_node_id]
                 for external_node_id, local_node_id in zip(external_node_ids, local_node_ids, strict=True)
             }
         if signal_on:
