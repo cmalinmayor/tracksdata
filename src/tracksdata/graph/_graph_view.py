@@ -1120,7 +1120,7 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
     def _apply_root_edge_attrs(
         self,
         *,
-        edge_ids: Sequence[int],
+        edge_ids: Sequence[int] | None,
         attrs: dict[str, Any],
     ) -> None:
         """
@@ -1128,8 +1128,9 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
 
         Parameters
         ----------
-        edge_ids : Sequence[int]
-            Edges updated on the root, in root edge ids.
+        edge_ids : Sequence[int] | None
+            Edges updated on the root, in root edge ids. ``None`` means all
+            edges; update-all values are necessarily scalar.
         attrs : dict[str, Any]
             The attributes written, in the same form passed to
             ``update_edge_attrs``.
@@ -1139,11 +1140,16 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
         if self._is_root_rx_graph:
             return
 
-        # Keep positions, not just ids: per-edge values are positional, so the
-        # in-view subset has to be selected by the same indices.
-        in_view = [(i, edge_id) for i, edge_id in enumerate(edge_ids) if edge_id in self._edge_map_from_root]
-        if not in_view:
-            return
+        if edge_ids is None:
+            if self.num_edges() == 0:
+                return
+            in_view = None
+        else:
+            # Keep positions, not just ids: per-edge values are positional, so
+            # the in-view subset has to be selected by the same indices.
+            in_view = [(i, edge_id) for i, edge_id in enumerate(edge_ids) if edge_id in self._edge_map_from_root]
+            if not in_view:
+                return
 
         if not self.sync:
             self._out_of_sync = True
@@ -1152,17 +1158,24 @@ class GraphView(MappedGraphMixin, RustWorkXGraph):
         # See `_apply_root_node_attrs`: keys this view does not track have no
         # local column and are skipped.
         local_keys = set(self.edge_attr_keys(return_ids=True))
-        positions = [i for i, _ in in_view]
-        local_attrs = {
-            key: value if np.isscalar(value) else [value[i] for i in positions]
-            for key, value in attrs.items()
-            if key in local_keys
-        }
+        if in_view is None:
+            local_attrs = {key: value for key, value in attrs.items() if key in local_keys}
+            # RustWorkXGraph expects its own edge indices, while GraphView.edge_ids
+            # exposes root ids through the mapping.
+            local_edge_ids = list(self.rx_graph.edge_indices())
+        else:
+            positions = [i for i, _ in in_view]
+            local_attrs = {
+                key: value if np.isscalar(value) else [value[i] for i in positions]
+                for key, value in attrs.items()
+                if key in local_keys
+            }
+            local_edge_ids = [self._edge_map_from_root[edge_id] for _, edge_id in in_view]
         if not local_attrs:
             return
 
         super().update_edge_attrs(
-            edge_ids=[self._edge_map_from_root[edge_id] for _, edge_id in in_view],
+            edge_ids=local_edge_ids,
             attrs=local_attrs,
         )
 

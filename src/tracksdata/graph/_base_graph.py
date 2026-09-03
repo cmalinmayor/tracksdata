@@ -207,7 +207,7 @@ class BaseGraph(abc.ABC):
 
     def _maintain_views_edge_attrs(
         self,
-        edge_ids: Sequence[int],
+        edge_ids: Sequence[int] | None,
         attrs: dict[str, Any],
     ) -> None:
         """
@@ -218,6 +218,8 @@ class BaseGraph(abc.ABC):
         step and no before/after snapshots.
 
         `edge_ids` are this graph's own edge ids, which is what views map from.
+        ``None`` means every edge and lets backends propagate scalar update-all
+        operations without first materializing every id.
         """
         for view in self._views:
             view._apply_root_edge_attrs(edge_ids=edge_ids, attrs=attrs)

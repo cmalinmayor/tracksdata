@@ -566,6 +566,24 @@ def test_root_edge_update_all_edges_is_visible_in_view(graph_backend: BaseGraph)
     assert _edge_value_of(view, other_id) == 4.0
 
 
+def test_sql_edge_update_all_with_view_does_not_materialize_root_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scalar update-all can propagate to a view without selecting root ids."""
+    graph = SQLGraph("sqlite", ":memory:")
+    edge_id, other_id = _graph_with_edge(graph)
+    view = graph.filter().subgraph()
+
+    def unexpected_edge_ids() -> list[int]:
+        raise AssertionError("update-all unexpectedly materialized every edge id")
+
+    monkeypatch.setattr(graph, "edge_ids", unexpected_edge_ids)
+    graph.update_edge_attrs(attrs={"w": 4.0})
+
+    assert _edge_value_of(view, edge_id) == 4.0
+    assert _edge_value_of(view, other_id) == 4.0
+
+
 def test_root_edge_update_per_edge_values_reach_view(graph_backend: BaseGraph) -> None:
     """Per-edge sequence values must land on the matching edges in the view."""
     edge_id, other_id = _graph_with_edge(graph_backend)

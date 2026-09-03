@@ -2302,7 +2302,9 @@ class SQLGraph(BaseGraph):
         self._update_table(self.Edge, edge_ids, DEFAULT_ATTR_KEYS.EDGE_ID, attrs)
 
         if self._views:
-            updated_edge_ids = self.edge_ids() if edge_ids is None else list(edge_ids)
+            # ``None`` already means every edge to the view maintenance path.
+            # Avoid selecting every root id merely to repeat that information.
+            updated_edge_ids = None if edge_ids is None else list(edge_ids)
             self._maintain_views_edge_attrs(edge_ids=updated_edge_ids, attrs=attrs)
 
     def assign_tracklet_ids(
