@@ -200,6 +200,47 @@ def test_sql_update_listener_uses_only_pre_update_read(
     assert new[0]["label"] == "unchanged"
 
 
+def test_sql_update_all_without_consumers_does_not_materialize_node_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scalar SQL update-all needs neither ids nor event payloads."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("x", pl.Float64)
+    node_ids = graph.bulk_add_nodes([{"t": 0, "x": 0.0}, {"t": 1, "x": 1.0}])
+
+    def unexpected_node_ids() -> list[int]:
+        raise AssertionError("update-all unexpectedly materialized every node id")
+
+    monkeypatch.setattr(graph, "node_ids", unexpected_node_ids)
+    graph.update_node_attrs(attrs={"x": 5.0})
+
+    assert graph.node_attrs(attr_keys=["x"])["x"].to_list() == [5.0, 5.0]
+    assert len(node_ids) == 2
+
+
+def test_sql_update_all_listener_derives_ids_from_old_attrs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The required pre-update read already contains every updated node id."""
+    graph = SQLGraph("sqlite", ":memory:")
+    graph.add_node_attr_key("x", pl.Float64)
+    expected_ids = graph.bulk_add_nodes([{"t": 0, "x": 0.0}, {"t": 1, "x": 1.0}])
+    calls = _record_updates(graph)
+
+    def unexpected_node_ids() -> list[int]:
+        raise AssertionError("update-all performed a separate node-id query")
+
+    monkeypatch.setattr(graph, "node_ids", unexpected_node_ids)
+    graph.update_node_attrs(attrs={"x": 5.0})
+
+    assert calls.calls[0][0] == expected_ids
+    assert calls.calls[0][1] == [
+        {"t": 0, "x": 0.0, "node_id": expected_ids[0]},
+        {"t": 1, "x": 1.0, "node_id": expected_ids[1]},
+    ]
+    assert [attrs["x"] for attrs in calls.calls[0][2]] == [5.0, 5.0]
+
+
 def test_sql_update_derives_nested_struct_payload() -> None:
     """Derived values retain the logical struct shape written to SQL."""
     graph = SQLGraph("sqlite", ":memory:")

@@ -2224,8 +2224,11 @@ class SQLGraph(BaseGraph):
         if "t" in attrs:
             raise ValueError("Node attribute 't' cannot be updated.")
 
-        updated_node_ids = self.node_ids() if node_ids is None else list(node_ids)
-        if len(updated_node_ids) == 0:
+        if node_ids is not None:
+            updated_node_ids: list[int] | None = list(node_ids)
+        else:
+            updated_node_ids = None
+        if updated_node_ids == []:
             return
 
         node_attr_schemas = self._node_attr_schemas()
@@ -2240,17 +2243,30 @@ class SQLGraph(BaseGraph):
         old_attrs_by_id = None
         new_attrs_by_id = None
         if needs_old:
-            old_df = self.filter(node_ids=updated_node_ids).node_attrs(
-                attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys]
-            )
+            if updated_node_ids is None:
+                old_df = self.node_attrs(attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys])
+                updated_node_ids = old_df[DEFAULT_ATTR_KEYS.NODE_ID].to_list()
+            else:
+                old_df = self.filter(node_ids=updated_node_ids).node_attrs(
+                    attr_keys=[DEFAULT_ATTR_KEYS.NODE_ID, *attr_keys]
+                )
             old_attrs_by_id = old_df.rows_by_key(
                 key=DEFAULT_ATTR_KEYS.NODE_ID, named=True, unique=True, include_key=True
             )
+        elif needs_new and updated_node_ids is None:
+            # Listener-free SQL-backed views still need per-node values for
+            # write-through. Avoid resolving all ids in the common case where
+            # nobody consumes an update payload.
+            updated_node_ids = self.node_ids()
+
+        if updated_node_ids == []:
+            return
 
         self._update_table(self.Node, node_ids, DEFAULT_ATTR_KEYS.NODE_ID, attrs)
 
         changed_keys = set(attrs.keys())
         if needs_new:
+            assert updated_node_ids is not None
             # The write succeeded, so its broadcast input is the new state. Derive
             # the payload directly instead of querying the same rows again. When an
             # event will be emitted, overlay the update on the complete old snapshot;
@@ -2262,12 +2278,14 @@ class SQLGraph(BaseGraph):
                 old_attrs_by_id,
             )
         if signal_on:
+            assert updated_node_ids is not None
             emit_node_updated_events(
                 self.node_updated,
                 ((node_id, old_attrs_by_id[node_id], new_attrs_by_id[node_id]) for node_id in updated_node_ids),
                 changed_keys,
             )
         if self._views:
+            assert updated_node_ids is not None
             self._maintain_views_node_attrs(
                 node_ids=updated_node_ids,
                 old_attrs_by_id=old_attrs_by_id,
