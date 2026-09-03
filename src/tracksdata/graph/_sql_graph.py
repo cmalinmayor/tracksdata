@@ -2317,6 +2317,66 @@ class SQLGraph(BaseGraph):
             updated_edge_ids = None if edge_ids is None else list(edge_ids)
             self._maintain_views_edge_attrs(edge_ids=updated_edge_ids, attrs=attrs)
 
+    def tracklet_nodes(self, seeds: list[int] | None) -> list[int]:
+        """Compute tracklet closure in one recursive SQL query."""
+        if seeds is None or len(seeds) == 0:
+            return []
+
+        seed_ids = _SQLIDSet(self, seeds)
+        edge = self.Edge
+        out_degree = (
+            sa.select(
+                edge.source_id.label("node_id"),
+                sa.func.count().label("degree"),
+            )
+            .group_by(edge.source_id)
+            .subquery("out_degree")
+        )
+        in_degree = (
+            sa.select(
+                edge.target_id.label("node_id"),
+                sa.func.count().label("degree"),
+            )
+            .group_by(edge.target_id)
+            .subquery("in_degree")
+        )
+
+        tracklet = (
+            sa.select(self.Node.node_id.label("node_id"))
+            .where(seed_ids.in_clause(self.Node.node_id))
+            .cte("tracklet", recursive=True)
+        )
+        forward_edge = aliased(edge, name="forward_edge")
+        backward_edge = aliased(edge, name="backward_edge")
+
+        forward = (
+            sa.select(forward_edge.target_id.label("node_id"))
+            .select_from(
+                tracklet.join(forward_edge, forward_edge.source_id == tracklet.c.node_id).join(
+                    out_degree,
+                    out_degree.c.node_id == forward_edge.source_id,
+                )
+            )
+            .where(out_degree.c.degree == 1)
+        )
+        backward = (
+            sa.select(backward_edge.source_id.label("node_id"))
+            .select_from(
+                tracklet.join(backward_edge, backward_edge.target_id == tracklet.c.node_id)
+                .join(in_degree, in_degree.c.node_id == backward_edge.target_id)
+                .join(out_degree, out_degree.c.node_id == backward_edge.source_id)
+            )
+            .where(in_degree.c.degree == 1, out_degree.c.degree == 1)
+        )
+        tracklet = tracklet.union(forward, backward)
+        statement = sa.select(tracklet.c.node_id).order_by(tracklet.c.node_id)
+
+        try:
+            with Session(self._engine) as session:
+                return [int(node_id) for node_id in session.execute(statement).scalars()]
+        finally:
+            seed_ids.close()
+
     def assign_tracklet_ids(
         self,
         output_key: str = DEFAULT_ATTR_KEYS.TRACKLET_ID,

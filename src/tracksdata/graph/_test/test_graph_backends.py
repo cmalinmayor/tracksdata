@@ -1,4 +1,5 @@
 import datetime as dt
+import itertools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -2733,6 +2734,64 @@ def test_sqlgraph_time_index_is_restored_on_reload(tmp_path: Path) -> None:
 
     time_indexes = [index for index in indexes if index["column_names"] == [DEFAULT_ATTR_KEYS.T]]
     assert len(time_indexes) == 1
+
+
+@pytest.mark.parametrize(
+    ("edges", "seeds"),
+    [
+        ([(0, 1), (1, 2), (2, 3)], [2]),
+        ([(0, 1), (0, 2), (1, 3), (2, 4)], [0, 1]),
+        ([(0, 2), (1, 2), (2, 3), (3, 4)], [0, 2]),
+        ([(0, 1), (1, 2), (2, 0)], [1]),
+    ],
+    ids=["chain", "division", "merge", "cycle"],
+)
+def test_sql_tracklet_nodes_matches_generic_traversal(edges: list[tuple[int, int]], seeds: list[int]) -> None:
+    """The recursive query preserves the generic traversal's branching rules."""
+    graph = SQLGraph("sqlite", ":memory:")
+    node_ids = graph.bulk_add_nodes([{"t": i} for i in range(5)])
+    graph.bulk_add_edges(
+        [
+            {
+                DEFAULT_ATTR_KEYS.EDGE_SOURCE: node_ids[source],
+                DEFAULT_ATTR_KEYS.EDGE_TARGET: node_ids[target],
+            }
+            for source, target in edges
+        ]
+    )
+    seed_ids = [node_ids[index] for index in seeds]
+
+    expected = BaseGraph.tracklet_nodes(graph, seed_ids)
+
+    assert graph.tracklet_nodes(seed_ids) == expected
+
+
+def test_sql_tracklet_nodes_executes_one_traversal_query() -> None:
+    """Track length must not determine the number of SQL round trips."""
+    graph = SQLGraph("sqlite", ":memory:")
+    node_ids = graph.bulk_add_nodes([{"t": i} for i in range(100)])
+    graph.bulk_add_edges(
+        [
+            {
+                DEFAULT_ATTR_KEYS.EDGE_SOURCE: source,
+                DEFAULT_ATTR_KEYS.EDGE_TARGET: target,
+            }
+            for source, target in itertools.pairwise(node_ids)
+        ]
+    )
+    statements: list[str] = []
+
+    def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany) -> None:
+        statements.append(statement)
+
+    sa.event.listen(graph._engine, "before_cursor_execute", record_statement)
+    try:
+        result = graph.tracklet_nodes([node_ids[50]])
+    finally:
+        sa.event.remove(graph._engine, "before_cursor_execute", record_statement)
+
+    assert result == node_ids
+    assert len(statements) == 1
 
 
 def test_sqlgraph_edge_attr_index_create_and_drop(graph_backend: BaseGraph) -> None:
