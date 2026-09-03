@@ -161,14 +161,12 @@ class GraphArrayView(BaseReadOnlyArray):
         self._offset = offset
 
         if dtype is None:
-            # Infer the dtype from the graph's attribute
-            # TODO improve performance
-            df = graph.node_attrs(attr_keys=[self._attr_key])
-            if df.is_empty():
+            if graph.num_nodes() == 0:
                 dtype = get_options().gav_default_dtype
             else:
                 try:
-                    dtype = polars_dtype_to_numpy_dtype(df[self._attr_key].dtype, allow_sequence=False)
+                    attr_dtype = graph._node_attr_schemas()[self._attr_key].dtype
+                    dtype = polars_dtype_to_numpy_dtype(attr_dtype, allow_sequence=False)
                 except ValueError as e:
                     raise ValueError(f"Attribute values for key '{self._attr_key}' must be scalar.") from e
                 # napari support for bool is limited

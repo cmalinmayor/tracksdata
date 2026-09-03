@@ -251,6 +251,25 @@ def test_graph_array_view_dtype_inference(graph_backend: BaseGraph) -> None:
     assert array_view.dtype == np.float64
 
 
+def test_graph_array_dtype_inference_does_not_read_attribute_values(
+    graph_backend: BaseGraph,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-empty graph's declared schema is sufficient for dtype inference."""
+    graph_backend.add_node_attr_key("label", dtype=pl.Int64)
+    graph_backend.add_node({DEFAULT_ATTR_KEYS.T: 0, "label": 7})
+
+    def unexpected_node_attrs(*_args, **_kwargs):
+        raise AssertionError("dtype inference unexpectedly materialized node attributes")
+
+    monkeypatch.setattr(graph_backend, "node_attrs", unexpected_node_attrs)
+    monkeypatch.setattr(graph_backend, "bbox_spatial_filter", lambda **_kwargs: object())
+
+    array_view = GraphArrayView(graph=graph_backend, shape=(1, 4, 4), attr_key="label")
+
+    assert array_view.dtype == np.int64
+
+
 @fixture(
     params=[
         (10, 100, 100),
